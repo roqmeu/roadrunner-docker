@@ -3,7 +3,7 @@ set -e
 
 mkdir -p /tmp/peps; \
 cd /tmp/peps; \
-curl -o $1-$2.tgz "https://pecl.php.net/get/$1-$2.tgz"; \
+wget -q -O $1-$2.tgz "https://pecl.php.net/get/$1-$2.tgz"; \
 tar xzf $1-$2.tgz; \
 cp -r $1-$2/. /usr/src/php/ext/$1
 rm -r /tmp/peps
