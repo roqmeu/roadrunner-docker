@@ -1,0 +1,25 @@
+{
+    "type": "project",
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "name": "example/example",
+    "require": {
+        "php": "^8.3",
+        "ext-curl": "*",
+        "ext-mbstring": "*",
+        "ext-pdo": "*",
+        "ext-yaml": "*",
+        "nyholm/psr7": "^1.0",
+        "spiral/roadrunner-http": "^3.0"
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "preferred-install": {
+            "*": "dist"
+        },
+        "sort-packages": true,
+        "allow-plugins": {
+            "*/*": false
+        }
+    }
+}

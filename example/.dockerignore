@@ -1,0 +1,12 @@
+.DS_Store
+.git
+.idea
+
+.dockerignore
+.gitignore
+
+Dockerfile
+Makefile
+
+vendor
+node_modules
