@@ -1,0 +1,3 @@
+IMAGE=rr2025-bookworm
+TAG=2025.1.2.1
+PLATFORMS="linux/arm64,linux/amd64"
