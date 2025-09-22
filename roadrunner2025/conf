@@ -1,3 +1,4 @@
-IMAGE=rr2025-bookworm
+IMAGE_BUILD=rr2025-bookworm-build
+IMAGE_RUNTIME=rr2025-bookworm-runtime
 TAG=2025.1.2.1
 PLATFORMS="linux/arm64,linux/amd64"

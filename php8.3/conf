@@ -1,3 +1,4 @@
-IMAGE=php8.3-bookworm-rr
+IMAGE_BUILD=php8.3-bookworm-rr-build
+IMAGE_RUNTIME=php8.3-bookworm-rr-runtime
 TAG=8.3.25.1
 PLATFORMS="linux/arm64,linux/amd64"

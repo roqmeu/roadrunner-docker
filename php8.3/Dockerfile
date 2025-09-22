@@ -1,25 +1,31 @@
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim AS build
 
-# prevent Debian's PHP packages from being installed
+ARG BUILD_DEPS="ca-certificates wget xz-utils gnupg"
+ARG PHPIZE_DEPS="autoconf dpkg-dev file g++ gcc libc-dev make pkg-config re2c"
+ARG PHP_BUILD_DEPS="libbrotli-dev libevent-dev libpsl-dev libssl-dev libzip-dev zlib1g-dev libargon2-dev libonig-dev libreadline-dev libsodium-dev libxml2-dev libicu-dev libc-client2007e-dev libkrb5-dev libpcre2-dev libpq-dev libmemcached-dev librabbitmq-dev libyaml-dev"
+
 RUN set -eux; \
+# prevent Debian's PHP packages from being installed
 	{ \
 		echo 'Package: php*'; \
 		echo 'Pin: release *'; \
 		echo 'Pin-Priority: -1'; \
-	} > /etc/apt/preferences.d/no-debian-php
-
+	} > /etc/apt/preferences.d/no-debian-php; \
+	\
 # prevent Debian's cURL packages from being installed
-RUN set -eux; \
 	{ \
 		echo 'Package: curl'; \
 		echo 'Pin: release *'; \
 		echo 'Pin-Priority: -1'; \
-	} > /etc/apt/preferences.d/no-debian-curl
-
-# build dependencies
-COPY docker-php-deps-install /usr/local/bin/
-
-RUN docker-php-deps-install build
+	} > /etc/apt/preferences.d/no-debian-curl; \
+	\
+# install build dependencies \
+	apt-get update; \
+	apt-get install -y --no-install-recommends $PHP_BUILD_DEPS $PHPIZE_DEPS $BUILD_DEPS; \
+	rm -rf /var/lib/apt/lists/*; \
+	\
+# make workdir
+	mkdir -p /var/www/html
 
 # Apply stack smash protection to functions using local buffers and alloca()
 # Make PHP's main executable position-independent (improves ASLR security mechanism, and has no performance impact on x86_64)
@@ -93,7 +99,7 @@ RUN set -eux; \
 	\
 	rm -rf /usr/src/curl* /usr/src/c-ares*
 
-COPY docker-php-source docker-php-ext-* /usr/local/bin/
+COPY docker-php-* /usr/local/bin/
 
 # Set static PHP pecl extensions version
 ARG PHP_EXT_AMQP_VERSION="2.1.2"
@@ -219,19 +225,49 @@ RUN set -eux; \
 	pecl update-channels; \
 	pecl install "xdebug-$PHP_EXT_XDEBUG_VERSION"; \
 	rm -rf /tmp/pear ~/.pearrc; \
-# smoke test
-	php --version
-
+	\
 # enable Zend OPcache by default
-RUN docker-php-ext-enable --ini-name 0-ext.ini opcache
+	docker-php-ext-enable opcache; \
+	\
+	# smoke test
+	php --version
 
 ARG COMPOSER_VERSION="2.6.6"
 
 RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer --version="$COMPOSER_VERSION"
 
+WORKDIR /var/www/html
+
+FROM debian:bookworm-slim AS runtime
+
+ARG PHP_RUNTIME_DEPS="libbrotli1 libevent-2.1-7 libpsl5 libssl3 libzip4 zlib1g libargon2-1 libonig5 libreadline8 libsodium23 libxml2 libicu72 libc-client2007e libkrb5-3 libpcre2-32-0 libpq5 libmemcached11 librabbitmq4 libyaml-0-2"
+
+COPY --from=build /usr/local/lib/ /usr/local/lib/
+COPY --from=build /usr/local/etc/php/ /usr/local/etc/php/
+COPY --from=build /usr/local/bin/php /usr/local/bin/
+
 RUN set -eux; \
+# prevent Debian's PHP packages from being installed \
+	{ \
+		echo 'Package: php*'; \
+		echo 'Pin: release *'; \
+		echo 'Pin-Priority: -1'; \
+	} > /etc/apt/preferences.d/no-debian-php; \
+	\
+# install runtime dependencies \
+	apt-get update; \
+	apt-get install -y --no-install-recommends $PHP_RUNTIME_DEPS; \
+	rm -rf /var/lib/apt/lists/*; \
+	\
+# make workdir
 	mkdir -p /var/www/html; \
 	chown www-data:www-data /var/www/html; \
-	chmod 1777 /var/www/html
+	chmod 1700 /var/www/html; \
+	\
+# smoke test
+	php --version
 
-WORKDIR /var/www/html
+WORKDIR /var/www/html/
+USER www-data
+
+CMD ["php", "-a"]

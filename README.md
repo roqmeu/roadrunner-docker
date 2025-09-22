@@ -89,48 +89,95 @@ Zend OPcache
 
 ## Usage
 
-These images are intended to be used as builder stages in multi-stage Dockerfiles. The `example/` directory demonstrates this pattern:
+These images are intended to be used as dedicated builder/runtime base images in multi-stage Dockerfiles. The `example/` directory demonstrates this pattern:
 
-- **Builder stage**: use `ghcr.io/roqmeu/rr2025-bookworm:latest` (RoadRunner + PHP + Composer) to resolve dependencies and provide PHP/rr binaries and config.
-- **Runtime stage**: use `debian:bookworm-slim`, copy only the necessary PHP runtime, config and binaries from the builder, install system runtime libs via `docker-php-deps-install runtime`, then run RoadRunner.
+- **Builder stage**: use `ghcr.io/roqmeu/rr2025-bookworm-build:latest` (PHP + rr + build libs + PECL + Composer) to install dependencies.
+- **Runtime stage**: use `ghcr.io/roqmeu/rr2025-bookworm-runtime:latest` (PHP + rr + runtime libs). Copy only `vendor/` and application sources; no additional install steps are required.
 
 ### Typical multi-stage Dockerfile
 
 ```Dockerfile
-# 1) Builder: PHP + Composer + RoadRunner binaries
-FROM ghcr.io/roqmeu/rr2025-bookworm:latest AS rr
+# 1) Builder: PHP + Composer (+ rr in base)
+FROM ghcr.io/roqmeu/rr2025-bookworm-build:latest AS cache
 
 COPY composer.json /var/www/html/
-RUN composer update
+RUN composer update -o -a -n --no-cache --no-progress
 
-# 2) Runtime: slim Debian with only runtime deps
-FROM debian:bookworm-slim AS app
+# 2) Runtime: minimal image with PHP + rr and runtime deps
+FROM ghcr.io/roqmeu/rr2025-bookworm-runtime:latest AS app
 
-# Copy PHP runtime and config
-COPY --from=rr /usr/local/lib/ /usr/local/lib/
-COPY --from=rr /usr/local/etc/php/ /usr/local/etc/php/
+COPY --chown=www-data:www-data --chmod=700 --from=cache /var/www/html/vendor /var/www/html/vendor
+COPY --chown=www-data:www-data --chmod=700 . /var/www/html/
+```
 
-# Copy binaries and helper
-COPY --from=rr /usr/local/bin/rr /usr/local/bin/php /usr/local/bin/docker-php-deps-install /usr/local/bin/
+### Build process diagram
 
-# Install system runtime libraries required by PHP and check binaries
-RUN docker-php-deps-install runtime && rm -f /usr/local/bin/docker-php-* && php -v && rr -v
+```mermaid
+flowchart TD
+  subgraph PHP_Build["php build"]
+    B1[Install system deps for building curl and php]
+    B2[Build curl]
+    B3[Fetch static PECL extensions]
+    B4[Build PHP with static extensions]
+    B5[Build shared PECL extensions]
+    B6[Install Composer]
 
-# Copy vendor and app sources
-COPY --from=rr /var/www/html/ /var/www/html/
-COPY . /var/www/html/
+    direction LR
+    B1 --> B2 --> B3 --> B4 --> B5 --> B6
+  end
 
-RUN chown -R www-data:www-data /var/www/html && chmod -R 1777 /var/www/html
+  subgraph RR_Build["roadrunner build"]
+    RB1[Copy rr binary]
+  end
 
-WORKDIR /var/www/html/
-USER www-data
-ENTRYPOINT ["rr", "serve", "-c", ".rr.yaml"]
+  subgraph App_Cache["application cache"]
+    EC1[OPTIONAL Shared PECL for project]
+    EC2[Copy Composer files]
+    EC3[Install Composer dependencies]
+
+    direction LR
+    EC1 --> EC2 --> EC3
+  end
+
+  subgraph PHP_Runtime["php runtime"]
+    R1[Copy PHP runtime files]
+    R2[Install runtime deps]
+    R3[Prepare workdir and permissions]
+
+    direction LR
+    R1 --> R2 --> R3
+  end
+
+  subgraph RR_Runtime["roadrunner runtime"]
+    RR1[Copy rr binary]
+    RR2[Entrypoint rr serve]
+
+    direction LR
+    RR1 --> RR2
+  end
+
+  subgraph App_Runtime["application runtime"]
+    EA1[OPTIONAL Copy shared PECL for project]
+    EA2[Copy app sources]
+    EA3[Copy vendor from cache]
+    EA4[OPTIONAL Symfony DI warmup]
+
+    direction LR
+    EA1 --> EA2 --> EA3 --> EA4
+  end
+
+  PHP_Build --> RR_Build
+  RR_Build --> App_Cache
+  PHP_Build --> PHP_Runtime
+  PHP_Runtime --> RR_Runtime
+  RR_Runtime --> App_Runtime
+  App_Cache --> App_Runtime
 ```
 
 ### Build and run the example
 
 ```bash
-docker build -t rr-example ./example
+docker build -t rr-example --target app ./example
 docker run --rm -p 8080:8080 rr-example
 # Test: curl http://localhost:8080  ->  Hello RoadRunner!
 ```
@@ -139,5 +186,5 @@ Optional: build base images locally instead of pulling from GHCR:
 
 ```bash
 make build_php && make build_rr
-docker build -t rr-example ./example
+docker build -t rr-example --target app ./example
 ```
